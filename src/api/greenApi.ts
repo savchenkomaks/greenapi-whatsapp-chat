@@ -43,7 +43,10 @@ export interface Notification {
 export async function receiveNotification(c: Credentials): Promise<Notification | null> {
   const res = await fetch(buildUrl(c, 'receiveNotification'))
   if (!res.ok) throw new Error(`Ошибка получения (${res.status})`)
-  return res.json() // null | Notification
+  // При пустой очереди GREEN-API возвращает пустое тело (а не JSON null),
+  // поэтому читаем текст и парсим только непустой ответ.
+  const text = await res.text()
+  return text ? (JSON.parse(text) as Notification) : null
 }
 
 /** Подтверждение обработки уведомления — убирает его из очереди. */
