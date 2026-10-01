@@ -1,16 +1,38 @@
 import { useEffect, useRef } from 'react'
 import type { ChatMessage, Credentials } from '../types'
-import { deleteNotification, receiveNotification } from '../api/greenApi'
+import {
+  deleteNotification,
+  receiveNotification,
+  type Notification,
+} from '../api/greenApi'
+
+const IDLE_DELAY = 4000
+const BUSY_DELAY = 500
+
+function toIncomingMessage(n: Notification): ChatMessage | null {
+  const { body } = n
+  if (body?.typeWebhook !== 'incomingMessageReceived') return null
+
+  const text =
+    body.messageData?.textMessageData?.textMessage ??
+    body.messageData?.extendedTextMessageData?.text
+  if (!text) return null
+
+  return {
+    id: body.idMessage ?? `in-${n.receiptId}`,
+    direction: 'in',
+    text,
+    timestamp: body.timestamp ? body.timestamp * 1000 : Date.now(),
+  }
+}
 
 /**
- * Поллинг входящих сообщений через HTTP API GREEN-API.
- * Цикл: receiveNotification -> обработали -> deleteNotification (сдвигаем очередь).
- * Когда очередь пуста — опрашиваем реже; есть сообщения — чаще (быстро разгребаем).
- * Колбэки держим в ref, чтобы не пересоздавать цикл на каждый ре-рендер.
+ * Поллинг входящих: receiveNotification → обработка → deleteNotification
+ * (подтверждение сдвигает очередь). Колбэки держим в ref, чтобы не
+ * перезапускать цикл на каждый ре-рендер.
  */
 export function useIncomingMessages(
   credentials: Credentials | null,
-  active: boolean,
   onMessage: (m: ChatMessage) => void,
   onError?: (e: unknown) => void,
 ) {
@@ -20,48 +42,33 @@ export function useIncomingMessages(
   onErrorRef.current = onError
 
   useEffect(() => {
-    if (!credentials || !active) return
+    if (!credentials) return
 
     let stopped = false
     let timer: ReturnType<typeof setTimeout>
 
-    async function tick() {
+    async function poll() {
       if (stopped || !credentials) return
-      let delay = 4000
+      let delay = IDLE_DELAY
       try {
-        const n = await receiveNotification(credentials)
-        if (n) {
-          delay = 500
-          const { body } = n
-          if (body?.typeWebhook === 'incomingMessageReceived') {
-            const md = body.messageData
-            const text =
-              md?.textMessageData?.textMessage ??
-              md?.extendedTextMessageData?.text ??
-              ''
-            if (text) {
-              onMessageRef.current({
-                id: body.idMessage ?? `in-${n.receiptId}`,
-                direction: 'in',
-                text,
-                timestamp: body.timestamp ? body.timestamp * 1000 : Date.now(),
-              })
-            }
-          }
-          // подтверждаем любое уведомление, иначе очередь не двигается
-          await deleteNotification(credentials, n.receiptId)
+        const notification = await receiveNotification(credentials)
+        if (notification) {
+          delay = BUSY_DELAY
+          const message = toIncomingMessage(notification)
+          if (message) onMessageRef.current(message)
+          await deleteNotification(credentials, notification.receiptId)
         }
       } catch (e) {
         onErrorRef.current?.(e)
       } finally {
-        if (!stopped) timer = setTimeout(tick, delay)
+        if (!stopped) timer = setTimeout(poll, delay)
       }
     }
 
-    tick()
+    poll()
     return () => {
       stopped = true
       clearTimeout(timer)
     }
-  }, [credentials, active])
+  }, [credentials])
 }

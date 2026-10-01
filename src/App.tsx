@@ -27,7 +27,7 @@ export default function App() {
   }, [])
 
   // поллинг запускается, как только введены credentials
-  useIncomingMessages(credentials, credentials !== null, onIncoming, onError)
+  useIncomingMessages(credentials, onIncoming, onError)
 
   async function handleSend(text: string) {
     if (!credentials) return
@@ -40,7 +40,7 @@ export default function App() {
     // оптимистично показываем своё сообщение сразу
     dispatch({
       type: 'add',
-      message: { id: `out-${Date.now()}`, direction: 'out', text, timestamp: Date.now() },
+      message: { id: crypto.randomUUID(), direction: 'out', text, timestamp: Date.now() },
     })
 
     try {

@@ -1,6 +1,5 @@
 import { useState } from 'react'
 
-/** Небольшой хук: значение в state + синхронизация с localStorage. */
 export function useLocalStorage<T>(key: string, initial: T) {
   const [value, setValue] = useState<T>(() => {
     try {
@@ -16,7 +15,7 @@ export function useLocalStorage<T>(key: string, initial: T) {
     try {
       localStorage.setItem(key, JSON.stringify(next))
     } catch {
-      // приватный режим / переполнение — не критично для работы UI
+      // ignore (private mode / quota)
     }
   }
 
